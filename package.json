@@ -1,0 +1,20 @@
+{
+  "name": "html2video",
+  "version": "1.0.0",
+  "description": "Render HTML/CSS/JS to MP4 with deterministic frame capture",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "cli": "node src/cli.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ffmpeg-static": "^5.2.0",
+    "puppeteer": "^22.15.0"
+  }
+}

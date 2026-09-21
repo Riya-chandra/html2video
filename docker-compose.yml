@@ -1,0 +1,11 @@
+services:
+  html2video:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      MAX_CONCURRENCY: "2"
+      MAX_DURATION: "60"
+    # Chromium crashes on the default 64 MB /dev/shm
+    shm_size: "1gb"
+    restart: unless-stopped

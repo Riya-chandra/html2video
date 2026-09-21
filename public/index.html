@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>html2video — render a page to MP4</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0f1317; --panel:#161b21; --line:#262d36;
+    --text:#e6e9ec; --muted:#8e9aa6; --gold:#f0b429; --bad:#ff7a6b;
+    --sans:"Space Grotesk",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ink);color:var(--text);font-family:var(--sans);
+       font-size:15px;line-height:1.5}
+  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+         padding:18px 22px;border-bottom:1px solid var(--line)}
+  header h1{margin:0;font-size:19px;font-weight:600;letter-spacing:-.01em}
+  header p{margin:0;color:var(--muted);font-size:13px}
+  main{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,.85fr);
+       gap:1px;background:var(--line);min-height:calc(100vh - 62px)}
+  section{background:var(--ink);padding:18px 22px;min-width:0}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+  textarea,input,select{width:100%;background:var(--panel);color:var(--text);
+    border:1px solid var(--line);border-radius:6px;padding:9px 10px;font:inherit}
+  textarea{font-family:var(--mono);font-size:13px;line-height:1.6;min-height:46vh;resize:vertical;tab-size:2}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--gold);outline-offset:1px;border-color:transparent}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:14px}
+  .row{display:flex;gap:10px;align-items:center;margin:14px 0}
+  button{font:inherit;font-weight:600;border:0;border-radius:6px;padding:11px 18px;cursor:pointer}
+  #go{background:var(--gold);color:#1b1205;flex:1}
+  #go:disabled{opacity:.5;cursor:progress}
+  .ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+  iframe{width:100%;aspect-ratio:16/9;background:#000;border:1px solid var(--line);border-radius:6px}
+  video{width:100%;border-radius:6px;background:#000;margin-top:12px}
+  .bar{height:6px;background:var(--panel);border-radius:99px;overflow:hidden;margin-top:12px}
+  .bar i{display:block;height:100%;width:0;background:var(--gold);transition:width .18s}
+  .status{font-family:var(--mono);font-size:12.5px;color:var(--muted);margin-top:8px;min-height:18px}
+  .status.err{color:var(--bad)}
+  a.dl{display:inline-block;margin-top:10px;color:var(--gold);font-size:14px}
+  details{margin-top:6px}
+  summary{cursor:pointer;color:var(--muted);font-size:13px}
+  @media (max-width:900px){main{grid-template-columns:1fr}textarea{min-height:34vh}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>html2video</h1>
+  <p>Paste a page, pick a length, get an MP4. Frames are captured on a frozen clock, so animation never drops.</p>
+</header>
+
+<main>
+  <section>
+    <label for="html">Page source</label>
+    <textarea id="html" spellcheck="false"></textarea>
+    <details>
+      <summary>Render a live URL instead</summary>
+      <div style="margin-top:10px">
+        <input id="url" placeholder="https://your-site.com">
+      </div>
+    </details>
+  </section>
+
+  <section>
+    <div class="grid">
+      <div><label for="width">Width</label><input id="width" type="number" value="1280"></div>
+      <div><label for="height">Height</label><input id="height" type="number" value="720"></div>
+      <div><label for="duration">Seconds</label><input id="duration" type="number" value="6" step="0.5"></div>
+      <div><label for="fps">Frames per second</label><input id="fps" type="number" value="30"></div>
+      <div><label for="format">Format</label>
+        <select id="format"><option>mp4</option><option>webm</option><option>gif</option></select>
+      </div>
+      <div><label for="scale">Pixel density</label>
+        <select id="scale"><option value="1">1x</option><option value="2">2x (retina)</option></select>
+      </div>
+      <div><label for="crf">Quality</label>
+        <select id="crf">
+          <option value="18">High — bigger file</option>
+          <option value="20" selected>Balanced</option>
+          <option value="26">Small file</option>
+        </select>
+      </div>
+      <div><label for="mode">Capture</label>
+        <select id="mode">
+          <option value="deterministic">Frozen clock</option>
+          <option value="realtime">Wall clock</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row">
+      <button id="go">Render video</button>
+      <button id="refresh" class="ghost">Update preview</button>
+    </div>
+
+    <div class="bar"><i id="fill"></i></div>
+    <p class="status" id="status">Ready.</p>
+
+    <iframe id="preview" title="Page preview" sandbox="allow-scripts"></iframe>
+    <div id="out"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const sample = `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  body{margin:0;height:100vh;display:grid;place-items:center;background:#0b0f14;
+       font-family:system-ui,sans-serif;color:#f5f5f5;overflow:hidden}
+  .ring{width:220px;height:220px;border-radius:50%;
+        border:3px solid #f0b429;border-right-color:transparent;
+        animation:spin 2s linear infinite}
+  h1{position:absolute;font-size:30px;letter-spacing:-.02em;
+     animation:breathe 2s ease-in-out infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes breathe{50%{opacity:.35}}
+</style></head>
+<body><div class="ring"></div><h1>Shipping soon</h1></body></html>`;
+$('html').value = sample;
+
+function refreshPreview(){
+  $('preview').srcdoc = $('html').value;
+  const w = Number($('width').value) || 16, h = Number($('height').value) || 9;
+  $('preview').style.aspectRatio = `${w} / ${h}`;
+}
+$('refresh').onclick = refreshPreview;
+refreshPreview();
+
+function setStatus(text, isError){
+  $('status').textContent = text;
+  $('status').classList.toggle('err', !!isError);
+}
+
+$('go').onclick = async () => {
+  const url = $('url').value.trim();
+  const payload = {
+    html: url ? undefined : $('html').value,
+    url: url || undefined,
+    width: +$('width').value, height: +$('height').value,
+    duration: +$('duration').value, fps: +$('fps').value,
+    scale: +$('scale').value, crf: +$('crf').value,
+    format: $('format').value, mode: $('mode').value,
+  };
+  $('go').disabled = true; $('out').innerHTML = ''; $('fill').style.width = '0';
+  setStatus('Queued.');
+
+  try {
+    const res = await fetch('/api/render', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Render request rejected');
+
+    const es = new EventSource(data.streamUrl);
+    es.onmessage = (e) => {
+      const ev = JSON.parse(e.data);
+      if (ev.type === 'progress') {
+        $('fill').style.width = ev.percent + '%';
+        setStatus(`frame ${ev.frame} / ${ev.total}`);
+      } else if (ev.type === 'status') {
+        setStatus('Rendering…');
+      } else if (ev.type === 'done') {
+        es.close(); $('go').disabled = false; $('fill').style.width = '100%';
+        setStatus(`${ev.frames} frames · ${(ev.size/1e6).toFixed(2)} MB`);
+        $('out').innerHTML =
+          (ev.format === 'gif'
+            ? `<img src="${ev.downloadUrl}" style="width:100%;border-radius:6px;margin-top:12px">`
+            : `<video src="${ev.downloadUrl}" controls autoplay muted loop playsinline></video>`) +
+          `<a class="dl" href="${ev.downloadUrl}" download>Download ${ev.format.toUpperCase()}</a>`;
+      } else if (ev.type === 'error') {
+        es.close(); $('go').disabled = false;
+        setStatus(ev.message, true);
+      }
+    };
+    es.onerror = () => { es.close(); $('go').disabled = false; setStatus('Lost connection to the server.', true); };
+  } catch (err) {
+    $('go').disabled = false;
+    setStatus(err.message, true);
+  }
+};
+</script>
+</body>
+</html>
